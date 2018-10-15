@@ -9,13 +9,15 @@
         '$stateParams', 'JobTemplateForm', 'GenerateForm', 'Rest', 'Alert',
         'ProcessErrors', 'GetBasePath', 'md5Setup', 'ParseTypeChange', 'Wait',
         'Empty', 'ToJSON', 'CallbackHelpInit', 'GetChoices', '$state', 'availableLabels',
-        'CreateSelect2', '$q', 'i18n', 'Inventory', 'Project', 'InstanceGroupsService', 'MultiCredentialService',
+        'CreateSelect2', '$q', 'i18n', 'Inventory', 'Project', 'InstanceGroupsService',
+        'MultiCredentialService', 'ConfigData', 'resolvedModels',
          function(
              $filter, $scope,
              $stateParams, JobTemplateForm, GenerateForm, Rest, Alert,
              ProcessErrors, GetBasePath, md5Setup, ParseTypeChange, Wait,
              Empty, ToJSON, CallbackHelpInit, GetChoices,
-             $state, availableLabels, CreateSelect2, $q, i18n, Inventory, Project, InstanceGroupsService, MultiCredentialService
+             $state, availableLabels, CreateSelect2, $q, i18n, Inventory, Project, InstanceGroupsService,
+             MultiCredentialService, ConfigData, resolvedModels
          ) {
 
             // Inject dynamic view
@@ -26,29 +28,38 @@
                 selectPlaybook, checkSCMStatus,
                 callback;
 
-            init();
-            function init(){
-                // apply form definition's default field values
-                GenerateForm.applyDefaults(form, $scope);
+            const jobTemplate = resolvedModels[0];
 
-                $scope.can_edit = true;
-                $scope.allow_callbacks = false;
-                $scope.playbook_options = [];
-                $scope.mode = "add";
-                $scope.parseType = 'yaml';
-                $scope.credentialNotPresent = false;
-                $scope.canGetAllRelatedResources = true;
+            $scope.canAddJobTemplate = jobTemplate.options('actions.POST');
 
-                md5Setup({
-                    scope: $scope,
-                    master: master,
-                    check_field: 'allow_callbacks',
-                    default_val: false
-                });
-                CallbackHelpInit({ scope: $scope });
+            // apply form definition's default field values
+            GenerateForm.applyDefaults(form, $scope);
 
-                $scope.surveyTooltip = i18n._('Please save before adding a survey to this job template.');
-            }
+            $scope.can_edit = true;
+            $scope.allow_callbacks = false;
+            $scope.playbook_options = [];
+            $scope.mode = "add";
+            $scope.parseType = 'yaml';
+            $scope.credentialNotPresent = false;
+            $scope.canGetAllRelatedResources = true;
+
+            md5Setup({
+                scope: $scope,
+                master: master,
+                check_field: 'allow_callbacks',
+                default_val: false
+            });
+            CallbackHelpInit({ scope: $scope });
+
+            $scope.surveyTooltip = i18n._('Please save before adding a survey to this job template.');
+
+            MultiCredentialService.getCredentialTypes()
+            .then(({ data }) => {
+                $scope.multiCredential = {
+                    credentialTypes: data.results,
+                    selectedCredentials: []
+                };
+            });
 
             callback = function() {
                 // Make sure the form controller knows there was a change
@@ -61,7 +72,13 @@
                 $scope.removeChoicesReady();
             }
             $scope.removeChoicesReady = $scope.$on('choicesReadyVerbosity', function () {
-                ParseTypeChange({ scope: $scope, field_id: 'job_template_variables', onChange: callback });
+                ParseTypeChange({
+                    scope: $scope,
+                    field_id: 'extra_vars',
+                    variable: 'extra_vars',
+                    onChange: callback
+                });
+
                 selectCount++;
                 if (selectCount === 3) {
                     var verbosity;
@@ -72,6 +89,8 @@
                         }
                     }
                     $scope.job_type = $scope.job_type_options[form.fields.job_type.default];
+                    const virtualEnvs = ConfigData.custom_virtualenvs || [];
+                    $scope.custom_virtualenvs_options = virtualEnvs;
 
                     CreateSelect2({
                         element:'#job_template_job_type',
@@ -100,6 +119,12 @@
                         element:'#job_template_skip_tags',
                         multiple: true,
                         addNew: true
+                    });
+
+                    CreateSelect2({
+                        element: '#job_template_custom_virtualenv',
+                        multiple: false,
+                        opts: $scope.custom_virtualenvs_options
                     });
                 }
             });
@@ -176,18 +201,17 @@
                             var msg;
                             switch (data.status) {
                             case 'failed':
-                                msg = "<div>The Project selected has a status of \"failed\". You must run a successful update before you can select a playbook. You will not be able to save this Job Template without a valid playbook.";
+                                msg = `<div>${i18n._('The Project selected has a status of')} \"${i18n._('failed')}\". ${i18n._('You must run a successful update before you can select a playbook. You will not be able to save this Job Template without a valid playbook.')}</div>`;
                                 break;
                             case 'never updated':
-                                msg = "<div>The Project selected has a status of \"never updated\". You must run a successful update before you can select a playbook. You will not be able to save this Job Template without a valid playbook.";
+                                msg = `<div>${i18n._('The Project selected has a status of')} \"${i18n._('never updated')}\". ${i18n._('You must run a successful update before you can select a playbook. You will not be able to save this Job Template without a valid playbook.')}</div>`;
                                 break;
                             case 'missing':
-                                msg = '<div>The selected project has a status of \"missing\". Please check the server and make sure ' +
-                                    ' the directory exists and file permissions are set correctly.</div>';
+                                msg = `<div>${i18n._('The selected project has a status of')} \"${i18n._('missing')}\". ${i18n._('Please check the server and make sure the directory exists and file permissions are set correctly.')}</div>`;
                                 break;
                             }
                             if (msg) {
-                                Alert('Warning', msg, 'alert-info alert-info--noTextTransform', null, null, null, null, true);
+                                Alert(i18n._('Warning'), msg, 'alert-info alert-info--noTextTransform', null, null, null, null, true);
                             }
                         })
                         .catch(({data, status}) => {
@@ -251,7 +275,7 @@
                 try {
                     for (fld in form.fields) {
                         if (form.fields[fld].type === 'select' &&
-                            fld !== 'playbook' && $scope[fld]) {
+                            fld !== 'playbook' && fld !== 'custom_virtualenv' && $scope[fld]) {
                             data[fld] = $scope[fld].value;
                         }
                         else if(form.fields[fld].type === 'checkbox_group') {
@@ -261,7 +285,7 @@
                             }
                         }
                         else {
-                            if (fld !== 'variables' &&
+                            if (fld !== 'extra_vars' &&
                                 fld !== 'survey' &&
                                 fld !== 'forks') {
                                 data[fld] = $scope[fld];
@@ -280,25 +304,13 @@
                     data.ask_credential_on_launch = $scope.ask_credential_on_launch ? $scope.ask_credential_on_launch : false;
                     data.job_tags = (Array.isArray($scope.job_tags)) ? $scope.job_tags.join() : "";
                     data.skip_tags = (Array.isArray($scope.skip_tags)) ? $scope.skip_tags.join() : "";
-                    if ($scope.selectedCredentials && $scope.selectedCredentials
-                        .machine && $scope.selectedCredentials
-                            .machine) {
-                                data.credential = $scope.selectedCredentials
-                                    .machine.id;
-                    } else {
-                        data.credential = null;
-                    }
-                    if ($scope.selectedCredentials && $scope.selectedCredentials
-                        .vault && $scope.selectedCredentials
-                            .vault.id) {
-                                data.vault_credential = $scope.selectedCredentials
-                                    .vault.id;
-                    } else {
-                        data.vault_credential = null;
-                    }
 
-                    data.extra_vars = ToJSON($scope.parseType,
-                        $scope.variables, true);
+                    // drop legacy 'credential' and 'vault_credential' keys from the creation request as they will
+                    // be provided to the related credentials endpoint by the template save success handler.
+                    delete data.credential;
+                    delete data.vault_credential;
+
+                    data.extra_vars = ToJSON($scope.parseType, $scope.extra_vars, true);
 
                     // We only want to set the survey_enabled flag to
                     // true for this job template if a survey exists
@@ -340,8 +352,6 @@
                     Rest.setUrl(defaultUrl);
                     Rest.post(data)
                         .then(({data}) => {
-
-                            Wait('stop');
                             if (data.related && data.related.callback) {
                                 Alert('Callback URL',
                                     `Host callbacks are enabled for this template. The callback URL is:
@@ -359,12 +369,6 @@
                                     'alert-danger', saveCompleted, null, null,
                                     null, true);
                             }
-
-                            MultiCredentialService
-                                .saveExtraCredentials({
-                                    creds: $scope.selectedCredentials.extra,
-                                    url: data.related.extra_credentials
-                                });
 
                             var orgDefer = $q.defer();
                             var associationDefer = $q.defer();
@@ -454,7 +458,9 @@
                                                     });
                                             }
 
-                                            saveCompleted(data.id);
+                                            MultiCredentialService
+                                                .saveRelated(data, $scope.multiCredential.selectedCredentials)
+                                                .then(() => saveCompleted(data.id));
                                         });
                                 });
                             });
@@ -489,5 +495,50 @@
             $scope.formCancel = function () {
                 $state.transitionTo('templates');
             };
+
+            let handleLabelCount = () => {
+                /**
+                 * This block of code specifically handles the client-side validation of the `labels` field.
+                 * Due to it's detached nature in relation to the other job template fields, we must
+                 * validate this field client-side in order to avoid the edge case where a user can make a
+                 * successful POST to the `job_templates` endpoint but however encounter a 200 error from
+                 * the `labels` endpoint due to a character limit.
+                 *
+                 * We leverage two of select2's available events, `select` and `unselect`, to detect when the user
+                 * has either added or removed a label. From there, we set a flag and do simple string length
+                 * checks to make sure a label's chacacter count remains under 512. Otherwise, we disable the "Save" button
+                 * by invalidating the field and inform the user of the error.
+                */
+
+
+                $scope.job_template_labels_isValid = true;
+                const maxCount = 512;
+                const jt_label_id = 'job_template_labels';
+
+                // Detect when a new label is added
+                $(`#${jt_label_id}`).on('select2:select', (e) => {
+                    const { text } = e.params.data;
+
+                    // If the character count of an added label is greater than 512, we set `labels` field as invalid
+                    if (text.length > maxCount) {
+                        $scope.job_template_form.labels.$setValidity(`${jt_label_id}`, false);
+                        $scope.job_template_labels_isValid = false;
+                    }
+                });
+
+                // Detect when a label is removed
+                $(`#${jt_label_id}`).on('select2:unselect', (e) => {
+                    const { text } = e.params.data;
+
+                    /* If the character count of a removed label is greater than 512 AND the field is currently marked
+                       as invalid, we set it back to valid */
+                    if (text.length > maxCount && $scope.job_template_form.labels.$error) {
+                        $scope.job_template_form.labels.$setValidity(`${jt_label_id}`, true);
+                        $scope.job_template_labels_isValid = true;
+                    }
+                });
+            };
+
+            handleLabelCount();
         }
     ];

@@ -9,13 +9,13 @@
     'ViewUpdateStatus', 'rbacUiControlService', 'GetBasePath',
     'GetSyncStatusMsg', 'Dataset', 'Find', 'QuerySet',
     'inventoryData', '$filter', 'Prompt', 'Wait', 'SourcesService', 'inventorySourceOptions',
-    'canAdd', 'hasSyncableSources', 'i18n', 'InventoryHostsStrings', 'InventorySourceModel',
+    'canAdd', 'hasSyncableSources', 'i18n', 'InventoryHostsStrings', 'InventorySourceModel', 'ProcessErrors',
     function($scope, $rootScope, $state, $stateParams, SourcesListDefinition,
         InventoryUpdate, CancelSourceUpdate,
         ViewUpdateStatus, rbacUiControlService, GetBasePath, GetSyncStatusMsg,
         Dataset, Find, qs, inventoryData, $filter, Prompt,
         Wait, SourcesService, inventorySourceOptions, canAdd, hasSyncableSources, i18n,
-        InventoryHostsStrings, InventorySource){
+             InventoryHostsStrings, InventorySource, ProcessErrors){
 
         let inventorySource = new InventorySource();
 
@@ -108,7 +108,6 @@
                 {status_tooltip: inventory_source_status.tooltip},
                 {launch_tooltip: inventory_source_status.launch_tip},
                 {launch_class: inventory_source_status.launch_class},
-                {group_schedule_tooltip: inventory_source_status.schedule_tip},
                 {source: inventory_source ? inventory_source.source : null},
                 {status: inventory_source ? inventory_source.status : null});
         }
@@ -121,29 +120,62 @@
         };
         $scope.deleteSource = function(inventory_source){
             var action = function(){
-                delete $rootScope.promptActionBtnClass;
+                $rootScope.promptActionBtnClass = "Modal-errorButton--sourcesDelete";
                 Wait('start');
-                SourcesService.delete(inventory_source.id).then(() => {
+                let hostDelete = SourcesService.deleteHosts(inventory_source.id).catch(({data, status}) => {
                     $('#prompt-modal').modal('hide');
-                    let reloadListStateParams = null;
-
-                    if($scope.inventory_sources.length === 1 && $state.params.inventory_source_search && !_.isEmpty($state.params.inventory_source_search.page) && $state.params.inventory_source_search.page !== '1') {
-                        reloadListStateParams = _.cloneDeep($state.params);
-                        reloadListStateParams.inventory_source_search.page = (parseInt(reloadListStateParams.inventory_source_search.page)-1).toString();
-                    }
-                    if (parseInt($state.params.inventory_source_id) === inventory_source.id) {
-                        $state.go('^', reloadListStateParams, {reload: true});
-                    } else {
-                        $state.go('.', reloadListStateParams, {reload: true});
-                    }
                     Wait('stop');
+                    ProcessErrors($scope, data, status, null,
+                        {
+                            hdr: i18n._('Error!'),
+                            msg: i18n._('There was an error deleting inventory source hosts. Returned status: ') +
+                                status
+                        });
                 });
+                let groupDelete = SourcesService.deleteGroups(inventory_source.id).catch(({data, status}) => {
+                    $('#prompt-modal').modal('hide');
+                    Wait('stop');
+                    ProcessErrors($scope, data, status, null,
+                        {
+                            hdr: i18n._('Error!'),
+                            msg: i18n._('There was an error deleting inventory source groups. Returned status: ') +
+                                status
+                        });
+                });
+                Promise.all([hostDelete, groupDelete]).then(() => {
+                        SourcesService.delete(inventory_source.id).then(() => {
+                            $('#prompt-modal').modal('hide');
+                            delete $rootScope.promptActionBtnClass;
+                            let reloadListStateParams = null;
+
+                            if($scope.inventory_sources.length === 1 && $state.params.inventory_source_search && !_.isEmpty($state.params.inventory_source_search.page) && $state.params.inventory_source_search.page !== '1') {
+                                reloadListStateParams = _.cloneDeep($state.params);
+                                reloadListStateParams.inventory_source_search.page = (parseInt(reloadListStateParams.inventory_source_search.page)-1).toString();
+                            }
+                            if (parseInt($state.params.inventory_source_id) === inventory_source.id) {
+                                $state.go('^', reloadListStateParams, {reload: true});
+                            } else {
+                                $state.go('.', reloadListStateParams, {reload: true});
+                            }
+                            Wait('stop');
+                        })
+                        .catch(({data, status}) => {
+                            $('#prompt-modal').modal('hide');
+                            Wait('stop');
+                            ProcessErrors($scope, data, status, null,
+                                {
+                                    hdr: i18n._('Error!'),
+                                    msg: i18n._('There was an error deleting inventory source. Returned status: ') +
+                                        status
+                                });
+                        });
+                    });
             };
 
             inventorySource.getDependentResourceCounts(inventory_source.id)
                 .then((counts) => {
                     const invalidateRelatedLines = [];
-                    let deleteModalBody = `<div class="Prompt-bodyQuery">${InventoryHostsStrings.get('deleteSource.CONFIRM')}</div>`;
+                    let deleteModalBody = `<div class="Prompt-bodyQuery">${InventoryHostsStrings.get('deleteResource.CONFIRM', 'inventory source')}</div>`;
 
                     counts.forEach(countObj => {
                         if(countObj.count && countObj.count > 0) {
@@ -152,7 +184,7 @@
                     });
 
                     if (invalidateRelatedLines && invalidateRelatedLines.length > 0) {
-                        deleteModalBody = `<div class="Prompt-bodyQuery">${InventoryHostsStrings.get('deleteSource.CONFIRM')}  ${InventoryHostsStrings.get('deleteSource.INVALIDATE')}</div>`;
+                        deleteModalBody = `<div class="Prompt-bodyQuery">${InventoryHostsStrings.get('deleteResource.USED_BY', 'inventory source')} ${InventoryHostsStrings.get('deleteResource.CONFIRM', 'inventory source')}</div>`;
                         invalidateRelatedLines.forEach(invalidateRelatedLine => {
                             deleteModalBody += invalidateRelatedLine;
                         });
@@ -180,16 +212,12 @@
         $scope.cancelUpdate = function (id) {
             CancelSourceUpdate({ scope: $scope, id: id });
         };
+
         $scope.viewUpdateStatus = function (id) {
             ViewUpdateStatus({
                 scope: $scope,
                 inventory_source_id: id
             });
-        };
-        $scope.scheduleSource = function(id) {
-            // Add this inv source's id to the array of inv source id's so that it gets
-            // added to the breadcrumb trail
-            $state.go('inventories.edit.inventory_sources.edit.schedules', {inventory_source_id: id}, {reload: true});
         };
 
         $scope.syncAllSources = function() {

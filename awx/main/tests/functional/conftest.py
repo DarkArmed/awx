@@ -1,20 +1,21 @@
-
 # Python
 import pytest
 import mock
 import json
 import os
 import six
+import tempfile
+import shutil
 from datetime import timedelta
+from six.moves import xrange
 
 # Django
 from django.core.urlresolvers import resolve
-from django.core.cache import cache
 from django.utils.six.moves.urllib.parse import urlparse
 from django.utils import timezone
 from django.contrib.auth.models import User
-from django.conf import settings
 from django.core.serializers.json import DjangoJSONEncoder
+from django.db.backends.sqlite3.base import SQLiteCursorWrapper
 from jsonbfield.fields import JSONField
 
 # AWX
@@ -33,7 +34,8 @@ from awx.main.models.inventory import (
     Group,
     Inventory,
     InventoryUpdate,
-    InventorySource
+    InventorySource,
+    CustomInventoryScript
 )
 from awx.main.models.organization import (
     Organization,
@@ -44,27 +46,23 @@ from awx.main.models.notifications import (
     NotificationTemplate,
     Notification
 )
+from awx.main.models.events import (
+    JobEvent,
+    AdHocCommandEvent,
+    ProjectUpdateEvent,
+    InventoryUpdateEvent,
+    SystemJobEvent,
+)
 from awx.main.models.workflow import WorkflowJobTemplate
 from awx.main.models.ad_hoc_commands import AdHocCommand
+from awx.main.models.oauth import OAuth2Application as Application
+
+__SWAGGER_REQUESTS__ = {}
 
 
-@pytest.fixture(autouse=True)
-def clear_cache():
-    '''
-    Clear cache (local memory) for each test to prevent using cached settings.
-    '''
-    cache.clear()
-
-
-@pytest.fixture(scope="session", autouse=True)
-def celery_memory_broker():
-    '''
-    FIXME: Not sure how "far" just setting the BROKER_URL will get us.
-    We may need to incluence CELERY's configuration like we do in the old unit tests (see base.py)
-
-    Allows django signal code to execute without the need for redis
-    '''
-    settings.CELERY_BROKER_URL='memory://localhost/'
+@pytest.fixture(scope="session")
+def swagger_autogen(requests=__SWAGGER_REQUESTS__):
+    return requests
 
 
 @pytest.fixture
@@ -73,7 +71,8 @@ def user():
         try:
             user = User.objects.get(username=name)
         except User.DoesNotExist:
-            user = User(username=name, is_superuser=is_superuser, password=name)
+            user = User(username=name, is_superuser=is_superuser)
+            user.set_password(name)
             user.save()
         return user
     return u
@@ -171,7 +170,8 @@ def project_factory(organization):
 @pytest.fixture
 def job_factory(job_template, admin):
     def factory(job_template=job_template, initial_state='new', created_by=admin):
-        return job_template.create_job(created_by=created_by, status=initial_state)
+        return job_template.create_unified_job(_eager_fields={
+            'status': initial_state, 'created_by': created_by})
     return factory
 
 
@@ -377,7 +377,7 @@ def admin(user):
 
 @pytest.fixture
 def system_auditor(user):
-    u = user(False)
+    u = user('an-auditor', False)
     Role.singleton('system_auditor').members.add(u)
     return u
 
@@ -489,6 +489,13 @@ def inventory_update(inventory_source):
 
 
 @pytest.fixture
+def inventory_script(organization):
+    return CustomInventoryScript.objects.create(name='test inv script',
+                                                organization=organization,
+                                                script='#!/usr/bin/python')
+
+
+@pytest.fixture
 def host(group, inventory):
     return group.hosts.create(name='single-host', inventory=inventory)
 
@@ -513,11 +520,14 @@ def _request(verb):
             user = data_or_user
         elif 'data' not in kwargs:
             kwargs['data'] = data_or_user
-        if 'format' not in kwargs:
+        if 'format' not in kwargs and 'content_type' not in kwargs:
             kwargs['format'] = 'json'
 
         view, view_args, view_kwargs = resolve(urlparse(url)[2])
         request = getattr(APIRequestFactory(), verb)(url, **kwargs)
+        if isinstance(kwargs.get('cookies', None), dict):
+            for key, value in kwargs['cookies'].items():
+                request.COOKIES[key] = value
         if middleware:
             middleware.process_request(request)
         if user:
@@ -528,21 +538,27 @@ def _request(verb):
             middleware.process_response(request, response)
         if expect:
             if response.status_code != expect:
-                data_copy = response.data.copy()
-                try:
-                    # Make translated strings printable
-                    for key, value in response.data.items():
-                        if isinstance(value, list):
-                            response.data[key] = []
-                            for item in value:
-                                response.data[key].append(str(value))
-                        else:
-                            response.data[key] = str(value)
-                except Exception:
-                    response.data = data_copy
-                print(response.data)
-            assert response.status_code == expect
-        response.render()
+                if getattr(response, 'data', None):
+                    try:
+                        data_copy = response.data.copy()
+                        # Make translated strings printable
+                        for key, value in response.data.items():
+                            if isinstance(value, list):
+                                response.data[key] = []
+                                for item in value:
+                                    response.data[key].append(str(item))
+                            else:
+                                response.data[key] = str(value)
+                    except Exception:
+                        response.data = data_copy
+            assert response.status_code == expect, 'Response data: {}'.format(
+                getattr(response, 'data', None)
+            )
+        if hasattr(response, 'render'):
+            response.render()
+        __SWAGGER_REQUESTS__.setdefault(request.path, {})[
+            (request.method.lower(), response.status_code)
+        ] = (response.get('Content-Type', None), response.content, kwargs.get('data'))
         return response
     return rf
 
@@ -656,7 +672,7 @@ def job_template_labels(organization, job_template):
 
 @pytest.fixture
 def workflow_job_template(organization):
-    wjt = WorkflowJobTemplate(name='test-workflow_job_template')
+    wjt = WorkflowJobTemplate(name='test-workflow_job_template', organization=organization)
     wjt.save()
 
     return wjt
@@ -665,7 +681,8 @@ def workflow_job_template(organization):
 @pytest.fixture
 def workflow_job_factory(workflow_job_template, admin):
     def factory(workflow_job_template=workflow_job_template, initial_state='new', created_by=admin):
-        return workflow_job_template.create_unified_job(created_by=created_by, status=initial_state)
+        return workflow_job_template.create_unified_job(_eager_fields={
+            'status': initial_state, 'created_by': created_by})
     return factory
 
 
@@ -679,7 +696,8 @@ def system_job_template():
 @pytest.fixture
 def system_job_factory(system_job_template, admin):
     def factory(system_job_template=system_job_template, initial_state='new', created_by=admin):
-        return system_job_template.create_unified_job(created_by=created_by, status=initial_state)
+        return system_job_template.create_unified_job(_eager_fields={
+            'status': initial_state, 'created_by': created_by})
     return factory
 
 
@@ -703,3 +721,34 @@ def get_db_prep_save(self, value, connection, **kwargs):
 @pytest.fixture
 def monkeypatch_jsonbfield_get_db_prep_save(mocker):
     JSONField.get_db_prep_save = get_db_prep_save
+
+
+@pytest.fixture
+def oauth_application(admin):
+    return Application.objects.create(
+        name='test app', user=admin, client_type='confidential',
+        authorization_grant_type='password'
+    )
+
+
+@pytest.fixture
+def sqlite_copy_expert(request):
+    # copy_expert is postgres-specific, and SQLite doesn't support it; mock its
+    # behavior to test that it writes a file that contains stdout from events
+    path = tempfile.mkdtemp(prefix='job-event-stdout')
+
+    def write_stdout(self, sql, fd):
+        # simulate postgres copy_expert support with ORM code
+        parts = sql.split(' ')
+        tablename = parts[parts.index('from') + 1]
+        for cls in (JobEvent, AdHocCommandEvent, ProjectUpdateEvent,
+                    InventoryUpdateEvent, SystemJobEvent):
+            if cls._meta.db_table == tablename:
+                for event in cls.objects.order_by('start_line').all():
+                    fd.write(event.stdout.encode('utf-8'))
+
+    setattr(SQLiteCursorWrapper, 'copy_expert', write_stdout)
+    request.addfinalizer(lambda: shutil.rmtree(path))
+    request.addfinalizer(lambda: delattr(SQLiteCursorWrapper, 'copy_expert'))
+    return path
+

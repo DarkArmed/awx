@@ -3,11 +3,12 @@
  *
  * All Rights Reserved
  *************************************************/
+import defaultStrings from '~assets/default.strings.json';
 
 export default [
     '$scope', '$rootScope', '$state', '$stateParams', '$timeout', '$q', 'Alert',
     'ConfigurationService', 'ConfigurationUtils', 'CreateDialog', 'CreateSelect2', 'i18n', 'ParseTypeChange', 'ProcessErrors', 'Store',
-    'Wait', 'configDataResolve', 'ToJSON', 'ConfigService',
+    'Wait', 'configDataResolve', 'ToJSON', 'ConfigService', 'ngToast',
     //Form definitions
     'configurationAzureForm',
     'configurationGithubForm',
@@ -15,6 +16,11 @@ export default [
     'configurationGithubTeamForm',
     'configurationGoogleForm',
     'configurationLdapForm',
+    'configurationLdap1Form',
+    'configurationLdap2Form',
+    'configurationLdap3Form',
+    'configurationLdap4Form',
+    'configurationLdap5Form',
     'configurationRadiusForm',
     'configurationTacacsForm',
     'configurationSamlForm',
@@ -26,7 +32,7 @@ export default [
     function(
         $scope, $rootScope, $state, $stateParams, $timeout, $q, Alert,
         ConfigurationService, ConfigurationUtils, CreateDialog, CreateSelect2, i18n, ParseTypeChange, ProcessErrors, Store,
-        Wait, configDataResolve, ToJSON, ConfigService,
+        Wait, configDataResolve, ToJSON, ConfigService, ngToast,
         //Form definitions
         configurationAzureForm,
         configurationGithubForm,
@@ -34,6 +40,11 @@ export default [
         configurationGithubTeamForm,
         configurationGoogleForm,
         configurationLdapForm,
+        configurationLdap1Form,
+        configurationLdap2Form,
+        configurationLdap3Form,
+        configurationLdap4Form,
+        configurationLdap5Form,
         configurationRadiusForm,
         configurationTacacsForm,
         configurationSamlForm,
@@ -45,6 +56,8 @@ export default [
     ) {
         var vm = this;
 
+        vm.product = defaultStrings.BRAND_NAME;
+
         var formDefs = {
             'azure': configurationAzureForm,
             'github': configurationGithubForm,
@@ -52,6 +65,11 @@ export default [
             'github_team': configurationGithubTeamForm,
             'google_oauth': configurationGoogleForm,
             'ldap': configurationLdapForm,
+            'ldap1': configurationLdap1Form,
+            'ldap2': configurationLdap2Form,
+            'ldap3': configurationLdap3Form,
+            'ldap4': configurationLdap4Form,
+            'ldap5': configurationLdap5Form,
             'radius': configurationRadiusForm,
             'tacacs': configurationTacacsForm,
             'saml': configurationSamlForm,
@@ -85,9 +103,14 @@ export default [
                                 // the ConfigurationUtils.arrayToList()
                                 // does a string.split(', ') w/ an extra space
                                 // behind the comma.
+
+                                const isLdap = (key.indexOf("AUTH_LDAP") !== -1);
+                                const isLdapUserSearch = isLdap && (key.indexOf("USER_SEARCH") !== -1);
+                                const isLdapGroupSearch = isLdap && (key.indexOf("GROUP_SEARCH") !== -1);
+
                                 if(key === "AD_HOC_COMMANDS"){
                                     $scope[key] = data[key];
-                                } else if (key === "AUTH_LDAP_USER_SEARCH" || key === "AUTH_LDAP_GROUP_SEARCH") {
+                                } else if (isLdapUserSearch || isLdapGroupSearch) {
                                     $scope[key] = JSON.stringify(data[key]);
                                 } else {
                                     $scope[key] = ConfigurationUtils.arrayToList(data[key], key);
@@ -146,7 +169,7 @@ export default [
             setCurrentSystem: function(form) {
                 this.currentSystem = form;
                 this.setCurrent(this.currentSystem);
-            }
+            },
         };
 
         // Default to auth form and tab
@@ -199,7 +222,7 @@ export default [
         };
 
         function activeTabCheck(setForm) {
-            if(!$scope[formTracker.currentFormName()].$dirty) {
+            if(!$scope[formTracker.currentFormName()] || !$scope[formTracker.currentFormName()].$dirty) {
                 active(setForm);
             } else {
                     var msg = i18n._('You have unsaved changes. Would you like to proceed <strong>without</strong> saving?');
@@ -218,10 +241,15 @@ export default [
                     }, {
                         label: i18n._("Save changes"),
                         onClick: function() {
-                            vm.formSave();
-                            $scope[formTracker.currentFormName()].$setPristine();
-                            $('#FormModal-dialog').dialog('close');
-                            active(setForm);
+                            vm.formSave().then(() => {
+                                $scope[formTracker.currentFormName()].$setPristine();
+                                $('#FormModal-dialog').dialog('close');
+                                active(setForm);
+                            }).catch(()=> {
+                                event.preventDefault();
+                                $('#FormModal-dialog').dialog('close');
+                            });
+
                         },
                         "class": "btn btn-primary",
                         "id": "formmodal-save-button"
@@ -248,18 +276,36 @@ export default [
                     formTracker.setCurrentSystem(formTracker.currentSystem);
                 }
             }
-            else {
-                formTracker.setCurrent(setForm);
-            }
+
             vm.activeTab = setForm;
-            $state.go('configuration', {
-                currentTab: setForm
-            }, {
-                location: true,
-                inherit: false,
-                notify: false,
-                reload: false
-            });
+
+            if (setForm !== 'license') {
+                if (setForm === 'auth') {
+                    formTracker.setCurrentAuth(formTracker.currentAuth);
+                } else if (setForm === 'system') {
+                    formTracker.setCurrentSystem(formTracker.currentSystem);
+                } else {
+                    formTracker.setCurrent(setForm);
+                }
+
+                $state.go('configuration', {
+                    currentTab: setForm
+                }, {
+                    location: true,
+                    inherit: false,
+                    notify: false,
+                    reload: false
+                });
+            } else {
+                $state.go('configuration.license', {
+                    currentTab: setForm
+                }, {
+                    location: true,
+                    inherit: false,
+                    notify: false,
+                    reload: false
+                });
+            }
         }
 
         var formCancel = function() {
@@ -271,15 +317,21 @@ export default [
                     "class": "btn Form-cancelButton",
                     "id": "formmodal-cancel-button",
                     onClick: function() {
+                        clearApiErrors();
+                        populateFromApi();
+                        $scope[formTracker.currentFormName()].$setPristine();
                         $('#FormModal-dialog').dialog('close');
-                        $state.go('setup');
                     }
                 }, {
                     label: i18n._("Save changes"),
                     onClick: function() {
-                        $scope.formSave();
-                        $('#FormModal-dialog').dialog('close');
-                        $state.go('setup');
+                        vm.formSave().then(() => {
+                            $scope[formTracker.currentFormName()].$setPristine();
+                            $('#FormModal-dialog').dialog('close');
+                        }).catch(()=> {
+                            event.preventDefault();
+                            $('#FormModal-dialog').dialog('close');
+                        });
                     },
                     "class": "btn btn-primary",
                     "id": "formmodal-save-button"
@@ -318,7 +370,6 @@ export default [
             Wait('start');
             var payload = {};
             payload[key] = $scope.configDataResolve[key].default;
-
             ConfigurationService.patchConfiguration(payload)
                 .then(function() {
                     $scope[key] = $scope.configDataResolve[key].default;
@@ -339,7 +390,15 @@ export default [
                         $scope.$broadcast(key+'_reverted');
                     }
                     else if($scope[key + '_field'].hasOwnProperty('codeMirror')){
-                        if (key === "AUTH_LDAP_USER_SEARCH" || key === "AUTH_LDAP_GROUP_SEARCH") {
+                        const isLdap = (key.indexOf("AUTH_LDAP") !== -1);
+
+                        const isLdapGroupTypeParams = isLdap && (key.indexOf("GROUP_TYPE_PARAMS") !== -1);
+                        const isLdapUserSearch = isLdap && (key.indexOf("USER_SEARCH") !== -1);
+                        const isLdapGroupSearch = isLdap && (key.indexOf("GROUP_SEARCH") !== -1);
+
+                        if (isLdapGroupTypeParams) {
+                            $scope[key] = JSON.stringify($scope.configDataResolve[key].default);
+                        } else if (isLdapUserSearch || isLdapGroupSearch) {
                             $scope[key] = '[]';
                         } else {
                             $scope[key] = '{}';
@@ -348,11 +407,12 @@ export default [
                     }
                     loginUpdate();
                 })
-                .catch(function(error) {
-                    ProcessErrors($scope, error, status, formDefs[formTracker.getCurrent()],
+                .catch(function(data) {
+                    ProcessErrors($scope, data.error, data.status, formDefs[formTracker.getCurrent()],
                         {
-                            hdr: i18n._('Error!'),
-                            msg: i18n._('There was an error resetting value. Returned status: ') + error.detail
+                            hdr: `<i class="fa fa-warning ConfigureTower-errorIcon"></i>
+                                <span class="error-color">${ i18n._('Error!')} </span>`,
+                            msg: i18n._('There was an error resetting value. Returned status: ') + data.error.detail
                         });
 
                 })
@@ -425,13 +485,12 @@ export default [
                 else {
                     // Everything else
                     if (key !== 'LOG_AGGREGATOR_TCP_TIMEOUT' ||
-                        ($scope.LOG_AGGREGATOR_PROTOCOL === 'https' ||
-                            $scope.LOG_AGGREGATOR_PROTOCOL === 'tcp')) {
+                        ($scope.LOG_AGGREGATOR_PROTOCOL.value === 'https' ||
+                            $scope.LOG_AGGREGATOR_PROTOCOL.value === 'tcp')) {
                                 payload[key] = $scope[key];
                     }
                 }
             });
-
             return payload;
         };
 
@@ -448,14 +507,23 @@ export default [
 
                     saveDeferred.resolve(data);
                     $scope[formTracker.currentFormName()].$setPristine();
+                    ngToast.success({
+                        timeout: 2000,
+                        dismissButton: false,
+                        dismissOnTimeout: true,
+                        content: `<i class="fa fa-check-circle
+                            Toast-successIcon"></i>` +
+                                i18n._('Save Complete')
+                    });
                 })
-                .catch(function(error, status) {
-                    ProcessErrors($scope, error, status, formDefs[formTracker.getCurrent()],
+                .catch(function(data) {
+                    ProcessErrors($scope, data.data, data.status, formDefs[formTracker.getCurrent()],
                         {
-                            hdr: i18n._('Error!'),
-                            msg: i18n._('Failed to save settings. Returned status: ') + status
+                            hdr: `<i class="fa fa-warning ConfigureTower-errorIcon"></i>
+                                <span class="error-color">${ i18n._('Error!')} </span>`,
+                            msg: i18n._('Failed to save settings. Returned status: ') + data.status
                         });
-                    saveDeferred.reject(error);
+                    saveDeferred.reject(data);
                 })
                 .finally(function() {
                     Wait('stop');
@@ -481,13 +549,14 @@ export default [
                 .then(function() {
                     //TODO consider updating form values with returned data here
                 })
-                .catch(function(error, status) {
+                .catch(function(data) {
                     //Change back on unsuccessful update
                     $scope[key] = !$scope[key];
-                    ProcessErrors($scope, error, status, formDefs[formTracker.getCurrent()],
+                    ProcessErrors($scope, data.data, data.status, formDefs[formTracker.getCurrent()],
                         {
-                            hdr: i18n._('Error!'),
-                            msg: i18n._('Failed to save toggle settings. Returned status: ') + error.detail
+                            hdr: `<i class="fa fa-warning ConfigureTower-errorIcon"></i>
+                                <span class="error-color">${ i18n._('Error!')} </span>`,
+                            msg: i18n._('Failed to save toggle settings. Returned status: ') + data.status
                         });
                 })
                 .finally(function() {
@@ -530,11 +599,12 @@ export default [
                     });
 
                 })
-                .catch(function(error) {
-                    ProcessErrors($scope, error, status, formDefs[formTracker.getCurrent()],
+                .catch(function(data) {
+                    ProcessErrors($scope, data.error, data.status, formDefs[formTracker.getCurrent()],
                         {
-                            hdr: i18n._('Error!'),
-                            msg: i18n._('There was an error resetting values. Returned status: ') + error.detail
+                            hdr: `<i class="fa fa-warning ConfigureTower-errorIcon"></i>
+                                <span class="error-color">${ i18n._('Error!')} </span>`,
+                            msg: i18n._('There was an error resetting values. Returned status: ') + data.error.detail
                         });
                 })
                 .finally(function() {

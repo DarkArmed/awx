@@ -8,11 +8,11 @@ export default ['$scope', '$rootScope', '$log', 'Rest', 'Alert',
     'ProjectList', 'Prompt', 'ProcessErrors', 'GetBasePath', 'ProjectUpdate',
     'Wait', 'Empty', 'Find', 'GetProjectIcon', 'GetProjectToolTip', '$filter',
     '$state', 'rbacUiControlService', 'Dataset', 'i18n', 'QuerySet', 'ProjectModel',
-    'ProjectsStrings',
+    'ProjectsStrings', 'ngToast',
     function($scope, $rootScope, $log, Rest, Alert, ProjectList,
     Prompt, ProcessErrors, GetBasePath, ProjectUpdate, Wait, Empty, Find,
     GetProjectIcon, GetProjectToolTip, $filter, $state, rbacUiControlService,
-    Dataset, i18n, qs, Project, ProjectsStrings) {
+    Dataset, i18n, qs, Project, ProjectsStrings, ngToast) {
 
         let project = new Project();
 
@@ -73,8 +73,7 @@ export default ['$scope', '$rootScope', '$log', 'Rest', 'Alert',
         function buildTooltips(project) {
             project.statusIcon = GetProjectIcon(project.status);
             project.statusTip = GetProjectToolTip(project.status);
-            project.scm_update_tooltip = i18n._("Start an SCM update");
-            project.scm_schedule_tooltip = i18n._("Schedule future SCM updates");
+            project.scm_update_tooltip = i18n._("Get latest SCM revision");
             project.scm_type_class = "";
 
             if (project.status === 'failed' && project.summary_fields.last_update && project.summary_fields.last_update.status === 'canceled') {
@@ -88,7 +87,6 @@ export default ['$scope', '$rootScope', '$log', 'Rest', 'Alert',
             }
             if (project.scm_type === 'manual') {
                 project.scm_update_tooltip = i18n._('Manual projects do not require an SCM update');
-                project.scm_schedule_tooltip = i18n._('Manual projects do not require a schedule');
                 project.scm_type_class = 'btn-disabled';
                 project.statusTip = i18n._('Not configured for SCM');
                 project.statusIcon = 'none';
@@ -117,7 +115,7 @@ export default ['$scope', '$rootScope', '$log', 'Rest', 'Alert',
                     if (data.status === 'successful' || data.status === 'failed' || data.status === 'canceled') {
                         $scope.reloadList();
                     } else {
-                        project.scm_update_tooltip = "SCM update currently running";
+                        project.scm_update_tooltip = i18n._("SCM update currently running");
                         project.scm_type_class = "btn-disabled";
                     }
                     project.status = data.status;
@@ -146,13 +144,40 @@ export default ['$scope', '$rootScope', '$log', 'Rest', 'Alert',
                 // Grab the id from summary_fields
                 var id = (data.summary_fields.current_update) ? data.summary_fields.current_update.id : data.summary_fields.last_update.id;
 
-                $state.go('scmUpdateStdout', { id: id });
+                $state.go('output', { id: id, type: 'project'}, { reload: true });
 
             } else {
                 Alert(i18n._('No Updates Available'), i18n._('There is no SCM update information available for this project. An update has not yet been ' +
                     ' completed.  If you have not already done so, start an update for this project.'), 'alert-info');
             }
         });
+
+        $scope.copyProject = project => {
+            Wait('start');
+            new Project('get', project.id)
+                .then(model => model.copy())
+                .then((copiedProj) => {
+                    ngToast.success({
+                        content: `
+                            <div class="Toast-wrapper">
+                                <div class="Toast-icon">
+                                    <i class="fa fa-check-circle Toast-successIcon"></i>
+                                </div>
+                                <div>
+                                    ${ProjectsStrings.get('SUCCESSFUL_CREATION', copiedProj.name)}
+                                </div>
+                            </div>`,
+                        dismissButton: false,
+                        dismissOnTimeout: true
+                    });
+                    $state.go('.', null, { reload: true });
+                })
+                .catch(({ data, status }) => {
+                    const params = { hdr: 'Error!', msg: `Call to copy failed. Return status: ${status}` };
+                    ProcessErrors($scope, data, status, null, params);
+                })
+                .finally(() => Wait('stop'));
+        };
 
         $scope.showSCMStatus = function(id) {
             // Refresh the project list
@@ -183,7 +208,7 @@ export default ['$scope', '$rootScope', '$log', 'Rest', 'Alert',
 
                         let reloadListStateParams = null;
 
-                        if($scope.projects.length === 1 && $state.params.project_search && !_.isEmpty($state.params.project_search.page) && $state.params.project_search.page !== '1') {
+                        if($scope.projects.length === 1 && $state.params.project_search && _.has($state, 'params.project_search.page') && $state.params.project_search.page !== '1') {
                             reloadListStateParams = _.cloneDeep($state.params);
                             reloadListStateParams.project_search.page = (parseInt(reloadListStateParams.project_search.page)-1).toString();
                         }
@@ -206,7 +231,7 @@ export default ['$scope', '$rootScope', '$log', 'Rest', 'Alert',
             project.getDependentResourceCounts(id)
                 .then((counts) => {
                     const invalidateRelatedLines = [];
-                    let deleteModalBody = `<div class="Prompt-bodyQuery">${ProjectsStrings.get('deleteProject.CONFIRM')}</div>`;
+                    let deleteModalBody = `<div class="Prompt-bodyQuery">${ProjectsStrings.get('deleteResource.CONFIRM', 'project')}</div>`;
 
                     counts.forEach(countObj => {
                         if(countObj.count && countObj.count > 0) {
@@ -215,7 +240,7 @@ export default ['$scope', '$rootScope', '$log', 'Rest', 'Alert',
                     });
 
                     if (invalidateRelatedLines && invalidateRelatedLines.length > 0) {
-                        deleteModalBody = `<div class="Prompt-bodyQuery">${ProjectsStrings.get('deleteProject.CONFIRM')}  ${ProjectsStrings.get('deleteProject.INVALIDATE')}</div>`;
+                        deleteModalBody = `<div class="Prompt-bodyQuery">${ProjectsStrings.get('deleteResource.USED_BY', 'project')} ${ProjectsStrings.get('deleteResource.CONFIRM', 'project')}</div>`;
                         invalidateRelatedLines.forEach(invalidateRelatedLine => {
                             deleteModalBody += invalidateRelatedLine;
                         });
@@ -226,7 +251,7 @@ export default ['$scope', '$rootScope', '$log', 'Rest', 'Alert',
                         resourceName: $filter('sanitize')(name),
                         body: deleteModalBody,
                         action: action,
-                        actionText: 'DELETE'
+                        actionText: i18n._('DELETE')
                     });
                 });
         };
@@ -312,13 +337,6 @@ export default ['$scope', '$rootScope', '$log', 'Rest', 'Alert',
                     }
                 }
             });
-        };
-
-        $scope.editSchedules = function(id) {
-            var project = Find({ list: $scope.projects, key: 'id', val: id });
-            if (!(project.scm_type === "Manual" || Empty(project.scm_type)) && !(project.status === 'updating' || project.status === 'running' || project.status === 'pending')) {
-                $state.go('projectSchedules', { id: id });
-            }
         };
     }
 ];

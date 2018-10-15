@@ -13,7 +13,13 @@ import { N_ } from '../i18n';
 import GetProjectPath from './factories/get-project-path.factory';
 import GetProjectIcon from './factories/get-project-icon.factory';
 import GetProjectToolTip from './factories/get-project-tool-tip.factory';
-import ProjectsTemplatesRoute from './projects-templates.route';
+import {
+    projectsSchedulesListRoute,
+    projectsSchedulesAddRoute,
+    projectsSchedulesEditRoute
+} from '../scheduler/schedules.route';
+
+import ProjectsTemplatesRoute from '~features/templates/routes/projectsTemplatesList.route';
 import ProjectsStrings from './projects.strings';
 
 export default
@@ -32,7 +38,7 @@ angular.module('Projects', [])
             let stateDefinitions = stateDefinitionsProvider.$get();
             let stateExtender = $stateExtenderProvider.$get();
             var projectResolve = {
-                    CredentialTypes: ['Rest', '$stateParams', 'GetBasePath', 'ProcessErrors',
+                CredentialTypes: ['Rest', '$stateParams', 'GetBasePath', 'ProcessErrors',
                     (Rest, $stateParams, GetBasePath, ProcessErrors) => {
                         var path = GetBasePath('credential_types');
                         Rest.setUrl(path);
@@ -42,18 +48,30 @@ angular.module('Projects', [])
                             }).catch(function(response) {
                                 ProcessErrors(null, response.data, response.status, null, {
                                     hdr: 'Error!',
-                                    msg: 'Failed to get credential tpyes. GET returned status: ' +
+                                    msg: 'Failed to get credential types. GET returned status: ' +
                                         response.status
                                 });
                             });
                     }
-                ]
+                ],
+                ConfigData: ['ConfigService', 'ProcessErrors', (ConfigService, ProcessErrors) => {
+                    return ConfigService.getConfig()
+                        .then(response => response)
+                        .catch(({data, status}) => {
+                            ProcessErrors(null, data, status, null, {
+                                hdr: 'Error!',
+                                msg: 'Failed to get config. GET returned status: ' +
+                                    'status: ' + status
+                            });
+                        });
+                }]
             };
 
             function generateStateTree() {
                 let projectTree = stateDefinitions.generateTree({
                     parent: 'projects', // top-most node in the generated tree (will replace this state definition)
                     modes: ['add', 'edit'],
+                    generateSchedulerView: true,
                     list: 'ProjectList',
                     form: 'ProjectsForm',
                     controllers: {
@@ -73,6 +91,9 @@ angular.module('Projects', [])
                     ncyBreadcrumb: {
                         label: N_('PROJECTS')
                     },
+                    breadcrumbs: {
+                        edit: '{{breadcrumb.project_name}}'
+                    },
                     resolve: {
                         add: projectResolve,
                         edit: projectResolve
@@ -87,6 +108,9 @@ angular.module('Projects', [])
                             return result.concat(definition.states);
                         }, [
                             stateExtender.buildDefinition(ProjectsTemplatesRoute),
+                            stateExtender.buildDefinition(projectsSchedulesListRoute),
+                            stateExtender.buildDefinition(projectsSchedulesAddRoute),
+                            stateExtender.buildDefinition(projectsSchedulesEditRoute)
                         ])
                     };
                 });

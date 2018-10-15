@@ -166,18 +166,47 @@ module.exports = {
 
         credentials.section.edit.expect.section('@details').visible;
     },
+    'change the password after saving': client => {
+        const credentials = client.page.credentials();
+        const { edit } = credentials.section;
+        const { machine } = edit.section.details.section;
+
+        machine.section.password.expect.element('@replace').visible;
+        machine.section.password.expect.element('@replace').enabled;
+        machine.section.password.expect.element('@revert').not.present;
+
+        machine.expect.element('@password').not.enabled;
+
+        machine.section.password.click('@replace');
+
+        machine.section.password.expect.element('@replace').not.present;
+        machine.section.password.expect.element('@revert').visible;
+
+        machine.expect.element('@password').enabled;
+        machine.setValue('@password', 'newpassword');
+
+        edit.section.details.click('@save');
+
+        credentials
+            .waitForElementVisible('div.spinny')
+            .waitForElementNotVisible('div.spinny');
+    },
     'credential is searchable after saving': client => {
         const credentials = client.page.credentials();
         const row = '#credentials_table tbody tr';
 
         credentials.section.list.section.search
             .waitForElementVisible('@input', AWX_E2E_TIMEOUT_LONG)
-            .setValue('@input', `name:${store.credential.name}`)
-            .click('@searchButton');
+            .waitForElementVisible('@searchButton', AWX_E2E_TIMEOUT_LONG)
+            .sendKeys('@input', `name:${store.credential.name}`)
+            .sendKeys('@input', client.Keys.ENTER);
+
+        client.pause(1000);
+        client.waitForElementNotVisible('div.spinny');
 
         credentials.waitForElementNotPresent(`${row}:nth-of-type(2)`);
         credentials.expect.element(row).text.contain(store.credential.name);
 
         client.end();
-    }
+    },
 };

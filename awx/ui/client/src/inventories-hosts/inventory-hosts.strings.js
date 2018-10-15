@@ -4,16 +4,6 @@ function InventoryHostsStrings (BaseString) {
     let t = this.t;
     let ns = this['inventory-hosts'];
 
-    ns.deleteInventory = {
-        CONFIRM: t.s('Are you sure you want to delete this inventory?'),
-        INVALIDATE: t.s('Doing so will invalidate the following:')
-    };
-
-    ns.deleteSource = {
-        CONFIRM: t.s('Are you sure you want to delete this inventory source?'),
-        INVALIDATE: t.s('Doing so will invalidate the following:')
-    };
-
     ns.deletegroup = {
         GROUP: count => t.p(count, 'group', 'groups'),
         HOST: count => t.p(count, 'host', 'hosts'),
@@ -31,12 +21,30 @@ function InventoryHostsStrings (BaseString) {
         DELETE_HOST: count => t.p(count, 'Delete host', 'Delete hosts'),
     };
 
+    ns.inventory = {
+        EDIT_HOST: t.s('Edit host'),
+        VIEW_HOST: t.s('View host'),
+        VIEW_INSIGHTS: t.s('View Insights Data')
+    };
+
+    ns.hostList = {
+        DISABLED_TOGGLE_TOOLTIP: () => t.s('{{ str1 }}</p><p>{{ str2 }}</p>', {
+            str1: t.s('Indicates if a host is available and should be included in running jobs.'), 
+            str2: t.s('For hosts that are part of an external inventory, this flag cannot be changed. It will be set by the inventory sync process.')
+        })
+    };
+
     ns.smartinventories = {
         hostfilter: {
             MISSING_ORG: t.s('Please select an organization before editing the host filter.'),
             INSTRUCTIONS: t.s('Please click the icon to edit the host filter.'),
             MISSING_PERMISSIONS: t.s('You do not have sufficient permissions to edit the host filter.')
         }
+    };
+
+    ns.smartinventorybutton = {
+        DISABLED_INSTRUCTIONS: t.s("Please enter at least one search term to create a new Smart Inventory."),
+        ENABLED_INSTRUCTIONS: t.s("Create a new Smart Inventory from search results.<br /><br />Note: changing the organization of the Smart Inventory could change the hosts included in the Smart Inventory.")
     };
 }
 

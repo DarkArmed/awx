@@ -6,12 +6,12 @@
 
 export default ['$scope', 'Rest', 'CredentialList', 'Prompt', 'ProcessErrors', 'GetBasePath',
         'Wait', '$state', '$filter', 'rbacUiControlService', 'Dataset', 'credentialType', 'i18n',
-        'CredentialModel', 'CredentialsStrings',
+        'CredentialModel', 'CredentialsStrings', 'ngToast',
     function($scope, Rest, CredentialList, Prompt,
     ProcessErrors, GetBasePath, Wait, $state, $filter, rbacUiControlService, Dataset,
-    credentialType, i18n, Credential, CredentialsStrings) {
+    credentialType, i18n, Credential, CredentialsStrings, ngToast) {
 
-        let credential = new Credential();
+        const credential = new Credential();
 
         var list = CredentialList,
             defaultUrl = GetBasePath('credentials');
@@ -48,9 +48,25 @@ export default ['$scope', 'Rest', 'CredentialList', 'Prompt', 'ProcessErrors', '
                 return;
             }
 
-            $scope[list.name].forEach(credential => {
-                credential.kind = credentialType.match('id', credential.credential_type).name;
-            });
+            const params = $scope[list.name]
+                .reduce((accumulator, credential) => {
+                    accumulator.push(credential.credential_type);
+
+                    return accumulator;
+                }, [])
+                .filter((id, i, array) => array.indexOf(id) === i)
+                .map(id => `or__id=${id}`);
+
+            credentialType.search(params)
+                .then(found => {
+                    if (!found) {
+                      return;
+                    }
+
+                    $scope[list.name].forEach(credential => {
+                        credential.kind = credentialType.match('id', credential.credential_type).name;
+                    });
+                });
         }
 
         // iterate over the list and add fields like type label, after the
@@ -73,6 +89,33 @@ export default ['$scope', 'Rest', 'CredentialList', 'Prompt', 'ProcessErrors', '
             }
         }
 
+        $scope.copyCredential = credential => {
+            Wait('start');
+            new Credential('get', credential.id)
+                .then(model => model.copy())
+                .then((copiedCred) => {
+                    ngToast.success({
+                        content: `
+                            <div class="Toast-wrapper">
+                                <div class="Toast-icon">
+                                    <i class="fa fa-check-circle Toast-successIcon"></i>
+                                </div>
+                                <div>
+                                    ${CredentialsStrings.get('SUCCESSFUL_CREATION', copiedCred.name)}
+                                </div>
+                            </div>`,
+                        dismissButton: false,
+                        dismissOnTimeout: true
+                    });
+                    $state.go('.', null, { reload: true });
+                })
+                .catch(({ data, status }) => {
+                    const params = { hdr: 'Error!', msg: `Call to copy failed. Return status: ${status}` };
+                    ProcessErrors($scope, data, status, null, params);
+                })
+                .finally(() => Wait('stop'));
+        };
+
         $scope.addCredential = function() {
             $state.go('credentials.add');
         };
@@ -91,7 +134,7 @@ export default ['$scope', 'Rest', 'CredentialList', 'Prompt', 'ProcessErrors', '
 
                         let reloadListStateParams = null;
 
-                        if($scope.credentials.length === 1 && $state.params.credential_search && !_.isEmpty($state.params.credential_search.page) && $state.params.credential_search.page !== '1') {
+                        if($scope.credentials.length === 1 && $state.params.credential_search && _.has($state, 'params.credential_search.page') && $state.params.credential_search.page !== '1') {
                             reloadListStateParams = _.cloneDeep($state.params);
                             reloadListStateParams.credential_search.page = (parseInt(reloadListStateParams.credential_search.page)-1).toString();
                         }
@@ -114,7 +157,7 @@ export default ['$scope', 'Rest', 'CredentialList', 'Prompt', 'ProcessErrors', '
             credential.getDependentResourceCounts(id)
                 .then((counts) => {
                     const invalidateRelatedLines = [];
-                    let deleteModalBody = `<div class="Prompt-bodyQuery">${CredentialsStrings.get('deleteCredential.CONFIRM')}</div>`;
+                    let deleteModalBody = `<div class="Prompt-bodyQuery">${CredentialsStrings.get('deleteResource.CONFIRM', 'credential')}</div>`;
 
                     counts.forEach(countObj => {
                         if(countObj.count && countObj.count > 0) {
@@ -123,7 +166,7 @@ export default ['$scope', 'Rest', 'CredentialList', 'Prompt', 'ProcessErrors', '
                     });
 
                     if (invalidateRelatedLines && invalidateRelatedLines.length > 0) {
-                        deleteModalBody = `<div class="Prompt-bodyQuery">${CredentialsStrings.get('deleteCredential.CONFIRM')}  ${CredentialsStrings.get('deleteCredential.INVALIDATE')}</div>`;
+                        deleteModalBody = `<div class="Prompt-bodyQuery">${CredentialsStrings.get('deleteResource.USED_BY', 'credential')} ${CredentialsStrings.get('deleteResource.CONFIRM', 'credential')}</div>`;
                         invalidateRelatedLines.forEach(invalidateRelatedLine => {
                             deleteModalBody += invalidateRelatedLine;
                         });

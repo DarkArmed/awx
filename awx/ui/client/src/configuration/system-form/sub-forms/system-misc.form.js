@@ -21,20 +21,26 @@ export default ['i18n', function(i18n) {
             ORG_ADMINS_CAN_SEE_ALL_USERS: {
                 type: 'toggleSwitch',
             },
-            AUTH_TOKEN_EXPIRATION: {
+            MANAGE_ORGANIZATION_AUTH: {
+                type: 'toggleSwitch',
+            },
+            SESSION_COOKIE_AGE: {
                 type: 'number',
                 integer: true,
-                min: 60,
-                reset: 'AUTH_TOKEN_EXPIRATION',
+                min: 61,
+                reset: 'SESSION_COOKIE_AGE',
             },
-            AUTH_TOKEN_PER_USER: {
+            SESSIONS_PER_USER: {
                 type: 'number',
                 integer: true,
                 spinner: true,
                 min: -1,
-                reset: 'AUTH_TOKEN_PER_USER',
+                reset: 'SESSIONS_PER_USER',
             },
             AUTH_BASIC_ENABLED: {
+                type: 'toggleSwitch',
+            },
+            ALLOW_OAUTH2_FOR_EXTERNAL_USERS: {
                 type: 'toggleSwitch',
             },
             REMOTE_HOST_HEADERS: {

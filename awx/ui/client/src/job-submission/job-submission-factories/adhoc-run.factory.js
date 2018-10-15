@@ -89,11 +89,11 @@
                      .then(({data}) => {
                           Wait('stop');
                           if($location.path().replace(/^\//, '').split('/')[0] !== 'jobs') {
-                              $state.go('adHocJobStdout', {id: data.id});
+                              $state.go('output', { id: data.id, type: 'command' });
                           }
                      })
                      .catch(({data, status}) => {
-                         ProcessErrors(scope, data, status, {
+                         ProcessErrors(scope, data, status, null, {
                              hdr: 'Error!',
                              msg: 'Failed to launch adhoc command. POST ' +
                                  'returned status: ' + status });

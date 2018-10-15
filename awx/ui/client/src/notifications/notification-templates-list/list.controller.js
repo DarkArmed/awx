@@ -7,12 +7,12 @@
  export default ['$scope', 'Wait', 'NotificationTemplatesList',
      'GetBasePath', 'Rest', 'ProcessErrors', 'Prompt', '$state',
      'ngToast', '$filter', 'Dataset', 'rbacUiControlService',
-     'i18n',
+     'i18n', 'NotificationTemplate', 'AppStrings',
      function(
          $scope, Wait, NotificationTemplatesList,
          GetBasePath, Rest, ProcessErrors, Prompt, $state,
          ngToast, $filter, Dataset, rbacUiControlService,
-         i18n) {
+         i18n, NotificationTemplate, AppStrings) {
 
          var defaultUrl = GetBasePath('notification_templates'),
              list = NotificationTemplatesList;
@@ -31,7 +31,7 @@
              $scope.list = list;
              $scope[`${list.iterator}_dataset`] = Dataset.data;
              $scope[list.name] = $scope[`${list.iterator}_dataset`].results;
-         }
+        }
 
              $scope.$on(`notification_template_options`, function(event, data){
                  $scope.options = data.data.actions.GET;
@@ -87,6 +87,33 @@
              }
              notification_template.template_status_html = html;
          }
+
+        $scope.copyNotification = notificationTemplate => {
+            Wait('start');
+            new NotificationTemplate('get', notificationTemplate.id)
+                .then(model => model.copy())
+                .then((copiedNotification) => {
+                    ngToast.success({
+                        content: `
+                            <div class="Toast-wrapper">
+                                <div class="Toast-icon">
+                                    <i class="fa fa-check-circle Toast-successIcon"></i>
+                                </div>
+                                <div>
+                                    ${AppStrings.get('SUCCESSFUL_CREATION', copiedNotification.name)}
+                                </div>
+                            </div>`,
+                        dismissButton: false,
+                        dismissOnTimeout: true
+                    });
+                    $state.go('.', null, { reload: true });
+                })
+                .catch(({ data, status }) => {
+                    const params = { hdr: 'Error!', msg: `Call to copy failed. Return status: ${status}` };
+                    ProcessErrors($scope, data, status, null, params);
+                })
+                .finally(() => Wait('stop'));
+        };
 
          $scope.testNotification = function() {
              var name = $filter('sanitize')(this.notification_template.name),
@@ -152,6 +179,7 @@
              }
          };
 
+
          $scope.addNotification = function() {
              $state.go('notifications.add');
          };
@@ -174,7 +202,7 @@
 
                          let reloadListStateParams = null;
 
-                         if($scope.notification_templates.length === 1 && $state.params.notification_template_search && !_.isEmpty($state.params.notification_template_search.page) && $state.params.notification_template_search.page !== '1') {
+                         if($scope.notification_templates.length === 1 && $state.params.notification_template_search && _.has($state, 'params.notification_template_search.page') && $state.params.notification_template_search.page !== '1') {
                              reloadListStateParams = _.cloneDeep($state.params);
                              reloadListStateParams.notification_template_search.page = (parseInt(reloadListStateParams.notification_template_search.page)-1).toString();
                          }

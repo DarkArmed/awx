@@ -1,13 +1,17 @@
 import mock
 import pytest
 
+from rest_framework.exceptions import PermissionDenied
+
 from awx.api.versioning import reverse
+from awx.api.serializers import JobTemplateSerializer
 from awx.main.access import (
     BaseAccess,
     JobTemplateAccess,
     ScheduleAccess
 )
 from awx.main.models.jobs import JobTemplate
+from awx.main.models.organization import Organization
 from awx.main.models.schedules import Schedule
 
 
@@ -77,10 +81,18 @@ def test_job_template_access_use_level(jt_linked, rando):
 
 
 @pytest.mark.django_db
-def test_job_template_access_org_admin(jt_linked, rando):
+@pytest.mark.parametrize("role_names", [("admin_role",), ("job_template_admin_role", "inventory_admin_role", "project_admin_role")])
+def test_job_template_access_admin(role_names, jt_linked, rando):
     access = JobTemplateAccess(rando)
     # Appoint this user as admin of the organization
-    jt_linked.inventory.organization.admin_role.members.add(rando)
+    #jt_linked.inventory.organization.admin_role.members.add(rando)
+    assert not access.can_read(jt_linked)
+    assert not access.can_delete(jt_linked)
+
+    for role_name in role_names:
+        role = getattr(jt_linked.inventory.organization, role_name)
+        role.members.add(rando)
+
     # Assign organization permission in the same way the create view does
     organization = jt_linked.inventory.organization
     jt_linked.get_deprecated_credential('ssh').admin_role.parents.add(organization.admin_role)
@@ -132,15 +144,56 @@ class TestJobTemplateCredentials:
         assert JobTemplateAccess(rando).can_attach(
             job_template, credential, 'credentials', {})
 
-    def test_job_template_vault_cred_check(self, job_template, vault_credential, rando):
+    def test_job_template_vault_cred_check(self, mocker, job_template, vault_credential, rando, project):
+        # TODO: remove in 3.4
         job_template.admin_role.members.add(rando)
         # not allowed to use the vault cred
-        assert not JobTemplateAccess(rando).can_change(
-            job_template, {'credentials': [vault_credential.pk]})
+        # this is checked in the serializer validate method, not access.py
+        view = mocker.MagicMock()
+        view.request = mocker.MagicMock()
+        view.request.user = rando
+        serializer = JobTemplateSerializer(job_template, context={'view': view})
+        with pytest.raises(PermissionDenied):
+            serializer.validate({
+                'vault_credential': vault_credential.pk,
+                'project': project,  # necessary because job_template fixture fails validation
+                'ask_inventory_on_launch': True,
+            })
 
-    def test_new_jt_with_vault(self, vault_credential, project, rando):
+    def test_job_template_vault_cred_check_noop(self, mocker, job_template, vault_credential, rando, project):
+        # TODO: remove in 3.4
+        job_template.credentials.add(vault_credential)
+        job_template.admin_role.members.add(rando)
+        # not allowed to use the vault cred
+        # this is checked in the serializer validate method, not access.py
+        view = mocker.MagicMock()
+        view.request = mocker.MagicMock()
+        view.request.user = rando
+        serializer = JobTemplateSerializer(job_template, context={'view': view})
+        # should not raise error:
+        serializer.validate({
+            'vault_credential': vault_credential.pk,
+            'project': project,  # necessary because job_template fixture fails validation
+            'playbook': 'helloworld.yml',
+            'ask_inventory_on_launch': True,
+        })
+
+    def test_new_jt_with_vault(self, mocker, vault_credential, project, rando):
         project.admin_role.members.add(rando)
-        assert not JobTemplateAccess(rando).can_add({'credentials': [vault_credential.pk], 'project': project.pk})
+        # TODO: remove in 3.4
+        # this is checked in the serializer validate method, not access.py
+        view = mocker.MagicMock()
+        view.request = mocker.MagicMock()
+        view.request.user = rando
+        serializer = JobTemplateSerializer(context={'view': view})
+        with pytest.raises(PermissionDenied):
+            serializer.validate({
+                'vault_credential': vault_credential.pk,
+                'project': project,
+                'playbook': 'helloworld.yml',
+                'ask_inventory_on_launch': True,
+                'name': 'asdf'
+            })
 
 
 @pytest.mark.django_db
@@ -226,3 +279,51 @@ class TestJobTemplateSchedules:
         schedule = Schedule.objects.create(unified_job_template=job_template, rrule=self.rrule, created_by=rando)
         access = ScheduleAccess(rando)
         assert access.can_change(schedule, {'rrule': self.rrule2})
+
+    def test_prompts_access_checked(self, job_template, inventory, credential, rando):
+        job_template.execute_role.members.add(rando)
+        access = ScheduleAccess(rando)
+        data = dict(
+            unified_job_template=job_template,
+            rrule=self.rrule,
+            created_by=rando,
+            inventory=inventory,
+            credentials=[credential]
+        )
+        with mock.patch('awx.main.access.JobLaunchConfigAccess.can_add') as mock_add:
+            mock_add.return_value = True
+            assert access.can_add(data)
+            mock_add.assert_called_once_with(data)
+        data.pop('credentials')
+        schedule = Schedule.objects.create(**data)
+        with mock.patch('awx.main.access.JobLaunchConfigAccess.can_change') as mock_change:
+            mock_change.return_value = True
+            assert access.can_change(schedule, {'inventory': 42})
+            mock_change.assert_called_once_with(schedule, {'inventory': 42})
+
+
+@pytest.mark.django_db
+def test_jt_org_ownership_change(user, jt_linked):
+    admin1 = user('admin1')
+    org1 = jt_linked.project.organization
+    org1.admin_role.members.add(admin1)
+    a1_access = JobTemplateAccess(admin1)
+
+    assert a1_access.can_read(jt_linked)
+
+
+    admin2 = user('admin2')
+    org2 = Organization.objects.create(name='mrroboto', description='domo')
+    org2.admin_role.members.add(admin2)
+    a2_access = JobTemplateAccess(admin2)
+
+    assert not a2_access.can_read(jt_linked)
+
+
+    jt_linked.project.organization = org2
+    jt_linked.project.save()
+    jt_linked.inventory.organization = org2
+    jt_linked.inventory.save()
+
+    assert a2_access.can_read(jt_linked)
+    assert not a1_access.can_read(jt_linked)

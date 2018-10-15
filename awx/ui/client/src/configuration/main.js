@@ -7,6 +7,7 @@
 import configurationService from './configuration.service';
 import ConfigurationUtils from './configurationUtils.service';
 import configurationRoute from './configuration.route';
+import licenseRoute from './license.route';
 import configurationController from './configuration.controller.js';
 
 // Import forms
@@ -17,6 +18,11 @@ import configurationGithubOrgForm from './auth-form/sub-forms/auth-github-org.fo
 import configurationGithubTeamForm from './auth-form/sub-forms/auth-github-team.form';
 import configurationGoogleForm from './auth-form/sub-forms/auth-google-oauth2.form';
 import configurationLdapForm from './auth-form/sub-forms/auth-ldap.form.js';
+import configurationLdap1Form from './auth-form/sub-forms/auth-ldap1.form.js';
+import configurationLdap2Form from './auth-form/sub-forms/auth-ldap2.form.js';
+import configurationLdap3Form from './auth-form/sub-forms/auth-ldap3.form.js';
+import configurationLdap4Form from './auth-form/sub-forms/auth-ldap4.form.js';
+import configurationLdap5Form from './auth-form/sub-forms/auth-ldap5.form.js';
 import configurationRadiusForm from './auth-form/sub-forms/auth-radius.form.js';
 import configurationTacacsForm from './auth-form/sub-forms/auth-tacacs.form.js';
 import configurationSamlForm from './auth-form/sub-forms/auth-saml.form';
@@ -39,6 +45,11 @@ angular.module('configuration', [])
     .factory('configurationGithubTeamForm', configurationGithubTeamForm)
     .factory('configurationGoogleForm', configurationGoogleForm)
     .factory('configurationLdapForm', configurationLdapForm)
+    .factory('configurationLdap1Form', configurationLdap1Form)
+    .factory('configurationLdap2Form', configurationLdap2Form)
+    .factory('configurationLdap3Form', configurationLdap3Form)
+    .factory('configurationLdap4Form', configurationLdap4Form)
+    .factory('configurationLdap5Form', configurationLdap5Form)
     .factory('configurationRadiusForm', configurationRadiusForm)
     .factory('configurationTacacsForm', configurationTacacsForm)
     .factory('configurationSamlForm', configurationSamlForm)
@@ -56,4 +67,5 @@ angular.module('configuration', [])
     .service('ConfigurationService', configurationService)
     .run(['$stateExtender', function($stateExtender) {
         $stateExtender.addState(configurationRoute);
+        $stateExtender.addState(licenseRoute);
     }]);

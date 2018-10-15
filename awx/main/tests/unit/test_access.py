@@ -158,7 +158,7 @@ def test_jt_existing_values_are_nonsensitive(job_template_with_ids, user_unit):
     """Assure that permission checks are not required if submitted data is
     identical to what the job template already has."""
 
-    data = model_to_dict(job_template_with_ids)
+    data = model_to_dict(job_template_with_ids, exclude=['unifiedjobtemplate_ptr'])
     access = JobTemplateAccess(user_unit)
 
     assert access.changes_are_non_sensitive(job_template_with_ids, data)
@@ -244,7 +244,7 @@ class TestWorkflowAccessMethods:
     def test_workflow_can_add(self, workflow, user_unit):
         organization = Organization(name='test-org')
         workflow.organization = organization
-        organization.admin_role = Role()
+        organization.workflow_admin_role = Role()
 
         def mock_get_object(Class, **kwargs):
             if Class == Organization:

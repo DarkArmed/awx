@@ -7,12 +7,12 @@
 export default ['$scope', '$location', '$stateParams', 'GenerateForm',
     'ProjectsForm', 'Rest', 'Alert', 'ProcessErrors', 'GetBasePath',
     'GetProjectPath', 'GetChoices', 'Wait', '$state', 'CreateSelect2', 'i18n',
-    'CredentialTypes',
+    'CredentialTypes', 'ConfigData',
     function($scope, $location, $stateParams, GenerateForm, ProjectsForm, Rest,
     Alert, ProcessErrors, GetBasePath, GetProjectPath, GetChoices, Wait, $state,
-    CreateSelect2, i18n, CredentialTypes) {
+    CreateSelect2, i18n, CredentialTypes, ConfigData) {
 
-        var form = ProjectsForm(),
+        let form = ProjectsForm(),
             base = $location.path().replace(/^\//, '').split('/')[0],
             defaultUrl = GetBasePath('projects'),
             master = {};
@@ -21,13 +21,22 @@ export default ['$scope', '$location', '$stateParams', 'GenerateForm',
 
         function init() {
             $scope.canEditOrg = true;
+            const virtualEnvs = ConfigData.custom_virtualenvs || [];
+            $scope.custom_virtualenvs_options = virtualEnvs;
+
             Rest.setUrl(GetBasePath('projects'));
             Rest.options()
-                .then(({data}) => {
-                    if (!data.actions.POST) {
-                        $state.go("^");
-                        Alert(i18n._('Permission Error'), i18n._('You do not have permission to add a project.'), 'alert-info');
-                    }
+            .then(({data}) => {
+                if (!data.actions.POST) {
+                    $state.go("^");
+                    Alert(i18n._('Permission Error'), i18n._('You do not have permission to add a project.'), 'alert-info');
+                }
+            });
+
+            CreateSelect2({
+                element: '#project_custom_virtualenv',
+                multiple: false,
+                opts: $scope.custom_virtualenvs_options
             });
 
             // apply form definition's default field values
@@ -124,7 +133,7 @@ export default ['$scope', '$location', '$stateParams', 'GenerateForm',
                     }
                     switch ($scope.scm_type.value) {
                         case 'git':
-                            $scope.credentialLabel = "SCM Credential";
+                            $scope.credentialLabel = "SCM " + i18n._("Credential");
                             $scope.urlPopover = '<p>' +
                                 i18n._('Example URLs for GIT SCM include:') +
                                 '</p><ul class=\"no-bullets\"><li>https://github.com/ansible/ansible.git</li>' +
@@ -137,7 +146,7 @@ export default ['$scope', '$location', '$stateParams', 'GenerateForm',
                             $scope.scmBranchLabel = i18n._('SCM Branch/Tag/Commit');
                             break;
                         case 'svn':
-                            $scope.credentialLabel = "SCM Credential";
+                            $scope.credentialLabel = "SCM " + i18n._("Credential");
                             $scope.urlPopover = '<p>' + i18n._('Example URLs for Subversion SCM include:') + '</p>' +
                                 '<ul class=\"no-bullets\"><li>https://github.com/ansible/ansible</li><li>svn://servername.example.com/path</li>' +
                                 '<li>svn+ssh://servername.example.com/path</li></ul>';
@@ -146,7 +155,7 @@ export default ['$scope', '$location', '$stateParams', 'GenerateForm',
                             $scope.scmBranchLabel = i18n._('Revision #');
                             break;
                         case 'hg':
-                            $scope.credentialLabel = "SCM Credential";
+                            $scope.credentialLabel = "SCM " + i18n._("Credential");
                             $scope.urlPopover = '<p>' + i18n._('Example URLs for Mercurial SCM include:') + '</p>' +
                                 '<ul class=\"no-bullets\"><li>https://bitbucket.org/username/project</li><li>ssh://hg@bitbucket.org/username/project</li>' +
                                 '<li>ssh://server.example.com/path</li></ul>' +
@@ -165,7 +174,7 @@ export default ['$scope', '$location', '$stateParams', 'GenerateForm',
                             $scope.lookupType = 'insights_credential';
                             break;
                         default:
-                            $scope.credentialLabel = "SCM Credential";
+                            $scope.credentialLabel = "SCM " + i18n._("Credential");
                             $scope.urlPopover = '<p> ' + i18n._('URL popover text') + '</p>';
                             $scope.credRequired = false;
                             $scope.lookupType = 'scm_credential';

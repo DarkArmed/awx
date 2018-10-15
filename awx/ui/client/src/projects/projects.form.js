@@ -104,7 +104,7 @@ export default ['i18n', 'NotificationsList', 'TemplateList',
                 ngDisabled: '!(project_obj.summary_fields.user_capabilities.edit || canAdd)'
             },
             scm_url: {
-                label: 'SCM URL',
+                label: i18n._('SCM URL'),
                 type: 'text',
                 ngShow: "scm_type && scm_type.value !== 'manual' && scm_type.value !== 'insights' ",
                 awRequiredWhen: {
@@ -175,7 +175,7 @@ export default ['i18n', 'NotificationsList', 'TemplateList',
                     ngDisabled: '!(project_obj.summary_fields.user_capabilities.edit || canAdd)'
                 }, {
                     name: 'scm_update_on_launch',
-                    label: i18n._('Update on Launch'),
+                    label: i18n._('Update Revision on Launch'),
                     type: 'checkbox',
                     awPopOver: '<p>' + i18n._('Each time a job runs using this project, update the revision of the project prior to starting the job.') + '</p>',
                     dataTitle: i18n._('SCM Update'),
@@ -200,8 +200,21 @@ export default ['i18n', 'NotificationsList', 'TemplateList',
                 dataTitle: i18n._('Cache Timeout'),
                 dataPlacement: 'right',
                 dataContainer: "body",
-                ngDisabled: '!(project_obj.summary_fields.user_capabilities.edit || canAdd)'
-            }
+                ngDisabled: '!(project_obj.summary_fields.user_capabilities.edit || canAdd)',
+                subForm: 'sourceSubForm'
+            },
+            custom_virtualenv: {
+                label: i18n._('Ansible Environment'),
+                type: 'select',
+                defaultText: i18n._('Use Default Environment'),
+                ngOptions: 'venv for venv in custom_virtualenvs_options track by venv',
+                awPopOver: "<p>" + i18n._("Select the custom Python virtual environment for this project to run on.") + "</p>",
+                dataTitle: i18n._('Ansible Environment'),
+                dataContainer: 'body',
+                dataPlacement: 'right',
+                ngDisabled: '!(project_obj.summary_fields.user_capabilities.edit || canAdd)',
+                ngShow: 'custom_virtualenvs_options.length > 1'
+            },
         },
 
         buttons: {
@@ -240,16 +253,17 @@ export default ['i18n', 'NotificationsList', 'TemplateList',
                         ngClick: "$state.go('.add')",
                         label: 'Add',
                         awToolTip: i18n._('Add a permission'),
-                        actionClass: 'btn List-buttonSubmit',
-                        buttonContent: '&#43; ' + i18n._('ADD'),
+                        actionClass: 'at-Button--add',
+                        actionId: 'button-add',
                         ngShow: '(project_obj.summary_fields.user_capabilities.edit || canAdd)'
                     }
                 },
 
                 fields: {
                     username: {
+                        key: true,
                         label: i18n._('User'),
-                        uiSref: 'users({user_id: field.id})',
+                        linkBase: 'users',
                         class: 'col-lg-3 col-md-3 col-sm-3 col-xs-4'
                     },
                     role: {
@@ -272,6 +286,11 @@ export default ['i18n', 'NotificationsList', 'TemplateList',
             templates: {
                 include: "TemplateList",
             },
+            schedules: {
+                title: i18n._('Schedules'),
+                skipGenerator: true,
+                ngClick: "$state.go('projects.edit.schedules')"
+            }
         }
 
     };

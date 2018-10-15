@@ -38,6 +38,13 @@
     justify-content: flex-end;
 }
 
+.Form-nav--ldapDropdownContainer {
+    align-items: center;
+    width: 100%;
+    margin: 0 0 auto auto;
+    display: flex;
+}
+
 .Form-nav--dropdown {
     width: 285px;
 }
@@ -90,9 +97,17 @@ input#filePickerText {
 .Section-messageBar {
     width: 120%;
     margin-left: -20px;
-    padding: 10px;
+    padding: 10px 10px 10px 20px;
     color: @white;
     background-color: @default-link;
+}
+
+.Section-messageBar-text {
+    margin-left: @at-space-2x;
+}
+
+.Section-messageBar-warning {
+    color: @at-color-warning;
 }
 
 .Section-messageBar--close {
@@ -164,5 +179,15 @@ input#filePickerText {
 }
 
 .LogAggregator-failedNotification{
-    max-width: 300px;
+    max-width: 500px;
+    word-break: break-word;
+}
+
+hr {
+    height: 1px;
+}
+
+.ConfigureTower-errorIcon{
+    margin-right:5px;
+    color:@red;
 }
